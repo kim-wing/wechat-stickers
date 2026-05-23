@@ -33,3 +33,4 @@ secrets/
 
 # Keep curated docs/example previews
 !examples/previews/*.jpg
+!examples/previews/*.gif
