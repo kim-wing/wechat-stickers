@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local job outputs
+out/
+runs/
+raw/
+main/
+thumbs/
+frames/
+keyed_frames/
+video/
+candidates/
+start_frames/
+end_frames/
+reports/
+prompts/
+*.zip
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# Large/generated media that should stay out of the source repo by default
+*.mp4
+*.mov
+*.gif
+
+# Keep curated docs/example previews
+!examples/previews/*.jpg

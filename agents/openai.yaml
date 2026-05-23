@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate WeChat Stickers"
+  short_description: "Build WeChat sticker packs and assets"
+  default_prompt: "Use $generate-wechat-stickers to create a WeChat sticker pack from my character idea."
