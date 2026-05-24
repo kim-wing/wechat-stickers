@@ -33,7 +33,7 @@ English summary:
 Prompt shape / 提示词结构：
 
 ```text
-Use $generate-wechat-stickers to create a static 24-pack WeChat sticker album.
+Use $wechat-stickers to create a static 24-pack WeChat sticker album.
 Character: fluffy white puppy named Xiao Jingling Gemin.
 Theme: playful magic daily reactions.
 Style: cute, expressive, high-readability Chinese sticker text.
@@ -41,7 +41,7 @@ Include cover, icon, banner, reward guide, reward thanks, metadata, preview, and
 ```
 
 ```text
-使用 $generate-wechat-stickers 生成一套 24 张静态微信表情包。
+使用 $wechat-stickers 生成一套 24 张静态微信表情包。
 角色：奶油白毛绒小狗小精灵 Gemin。
 主题：魔性日常反应。
 风格：可爱、表情夸张、中文文字清晰、主体比例大。
@@ -83,7 +83,7 @@ English summary:
 Prompt shape / 提示词结构：
 
 ```text
-Use $generate-wechat-stickers to create an animated 16-pack WeChat sticker album.
+Use $wechat-stickers to create an animated 16-pack WeChat sticker album.
 Character: fluffy white puppy named Xiao Jingling Gemin.
 Theme: gaming reactions and squad chat.
 Mode: transparent GIF, Seedance first-last-frame video route.
@@ -91,7 +91,7 @@ Make one pilot first. Do not fall back to sprite sheet or local still loop witho
 ```
 
 ```text
-使用 $generate-wechat-stickers 生成一套 16 张动态微信表情包。
+使用 $wechat-stickers 生成一套 16 张动态微信表情包。
 角色：奶油白毛绒小狗小精灵 Gemin。
 主题：开黑/游戏嘴替。
 模式：透明 GIF，走 Seedance 首尾帧视频路线。

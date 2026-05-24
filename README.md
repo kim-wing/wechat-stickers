@@ -1,4 +1,4 @@
-# Generate WeChat Stickers / 微信表情包生成 Skill
+# WeChat Stickers / 微信表情包生成 Skill
 
 English | [中文](#中文说明)
 
@@ -49,7 +49,7 @@ More notes: [examples/README.md](examples/README.md)
 ## Repository Contents
 
 ```text
-generate-wechat-stickers/
+wechat-stickers/
 ├── SKILL.md
 ├── agents/openai.yaml
 ├── references/
@@ -104,8 +104,8 @@ Clone this repository into your Codex skills directory:
 
 ```bash
 mkdir -p "$HOME/.codex/skills"
-git clone https://github.com/kim-wing/generate-wechat-stickers.git \
-  "$HOME/.codex/skills/generate-wechat-stickers"
+git clone https://github.com/kim-wing/wechat-stickers.git \
+  "$HOME/.codex/skills/wechat-stickers"
 ```
 
 Restart Codex, then ask:
@@ -113,11 +113,11 @@ Restart Codex, then ask:
 重启 Codex 后，可以这样使用：
 
 ```text
-Use $generate-wechat-stickers to create a 16-pack animated WeChat sticker album.
+Use $wechat-stickers to create a 16-pack animated WeChat sticker album.
 ```
 
 ```text
-使用 $generate-wechat-stickers 生成一套 16 张动态微信表情包，角色是一只奶油白毛绒小狗，主题是努力奋斗。
+使用 $wechat-stickers 生成一套 16 张动态微信表情包，角色是一只奶油白毛绒小狗，主题是努力奋斗。
 ```
 
 ## Seedance API Setup / Seedance API 申请与配置
@@ -160,7 +160,7 @@ Prompt Codex with:
 可以这样对 Codex 说：
 
 ```text
-Use $generate-wechat-stickers to create a static 24-pack WeChat sticker album.
+Use $wechat-stickers to create a static 24-pack WeChat sticker album.
 Character: a fluffy white puppy named Gemin.
 Theme: magic daily reactions.
 Style: cute, expressive, clean Chinese sticker text.
@@ -168,7 +168,7 @@ Include cover, icon, banner, reward guide, reward thanks, metadata, preview, and
 ```
 
 ```text
-使用 $generate-wechat-stickers 生成一套 24 张静态微信表情包。
+使用 $wechat-stickers 生成一套 24 张静态微信表情包。
 角色：奶油白毛绒小狗小精灵 Gemin。
 主题：魔性日常反应。
 风格：可爱、表情夸张、中文文字清晰。
@@ -198,7 +198,7 @@ Prompt Codex with:
 可以这样对 Codex 说：
 
 ```text
-Use $generate-wechat-stickers to create an animated 16-pack WeChat sticker album.
+Use $wechat-stickers to create an animated 16-pack WeChat sticker album.
 Character: fluffy white puppy named Gemin.
 Theme: gaming reactions.
 Mode: transparent GIF, Seedance first-last-frame video route.
@@ -206,7 +206,7 @@ Make one pilot first before generating the whole pack.
 ```
 
 ```text
-使用 $generate-wechat-stickers 生成一套 16 张动态微信表情包。
+使用 $wechat-stickers 生成一套 16 张动态微信表情包。
 角色：奶油白毛绒小狗小精灵 Gemin。
 主题：开黑/游戏嘴替。
 模式：透明 GIF，走 Seedance 首尾帧视频路线。

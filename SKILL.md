@@ -1,9 +1,9 @@
 ---
-name: generate-wechat-stickers
+name: wechat-stickers
 description: "Generate, postprocess, and package WeChat sticker packs from character or theme prompts. Use when Codex needs to create WeChat sticker album assets, single sticker assets, animated GIF stickers, static stickers, thumbnails, cover image, chat panel icon, detail banner, reward guide image, reward thanks image, meaning keywords, submission metadata, or QC reports for WeChat Sticker Open Platform style delivery."
 ---
 
-# Generate WeChat Stickers
+# WeChat Stickers
 
 Use this skill for WeChat sticker packs and WeChat-ready sticker assets.
 
