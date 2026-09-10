@@ -15,20 +15,16 @@ Use these specs when preparing WeChat sticker assets. The platform may change va
 - Animated album format: `GIF`.
 - Suggested max file size: `500KB` per main sticker.
 - Dynamic GIFs must loop forever.
-- Sprite-sheet fallback source: 16 frames (`4x4`) at about `70-90ms` per frame, only when sprite mode was explicitly requested or approved as fallback.
-- Complex sprite-sheet source: 20 frames (`5x4` or `4x5`) when the motion needs more in-betweens and the final GIF can still fit the size budget.
-- For sprite sheets, use 12 frames only for simple motions or tighter file budgets.
-- For sprite sheets, use 8 or 4 frames only as compact/preview fallback after accepting less smooth animation; do not treat 8-frame 2x4 output as standard-quality motion.
-- Video-based GIF output is not limited to 16/20 frames. Sample 24-48 frames from the MP4 depending on motion complexity and file size.
-- Standard-quality animated QC should require at least 12 frames and no visible magenta key-color fringe.
+- Default image-frame route: plan an ordered 12/16-frame equal-cell sheet, then verify actual motion and loop quality. See [sequential-frames.md](sequential-frames.md).
+- Frame count and timing are animation-design choices, not platform specifications. Existing scripts use a conservative 12-frame minimum; a compact profile must be applied consistently and documented.
+- Video-derived frame counts depend on action and byte budget. All routes require clean edges and readable playback.
 - Keep style unified and scenarios distinct.
 
 ## Video-Based Animated Stickers
 
 - Video-based animated stickers may be produced as either transparent GIFs or background GIFs.
-- Video-based generation is the default route for new animated sticker requests. Use sprite sheets only by explicit request, approved fallback, or tiny micro-motion cases where video is unnecessary.
-- Every new animated run must start with a mode-lock preflight before old project files or old prompts are reused: `animated_source_mode`, `video_input_mode`, `video_model`, `video_audio_policy`, output directory, and `sprite_fallback_approved`.
-- Old sprite-sheet jobs, old `preview_not_submission_ready` manifests, and old prompt files do not authorize a new run to use `4x4`/16-frame sprite mode. They are diagnostic evidence only unless the user explicitly asks to reuse that exact project.
+- Video is optional. Select it explicitly in the current plan; new animated jobs default to image-generated sequential frames.
+- Preserve the source mode of an existing project and keep source provenance. Old failed drafts do not establish a new run's quality or settings.
 - Use Doubao Seedance 1.5 Pro as the default and only video model for this workflow unless the project policy changes.
 - Use first-last-frame image-to-video as the default Seedance input mode. Provide a `first_frame` image and a `last_frame` image to constrain the action boundary. Use first-frame-only generation only when an end frame is unavailable, meaningless for the motion, or explicitly chosen.
 - First and last frame images must share the same aspect ratio, canvas size, character identity, camera/framing, subject scale, style, and background/key color. Mismatched dimensions or ratios can cause automatic crop/adaptation and should fail production review.

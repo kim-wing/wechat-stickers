@@ -709,6 +709,8 @@ def cmd_process_sticker(args: argparse.Namespace) -> None:
         temporal = temporal_metrics(frames, metrics)
         cell_width = frames[0].width if frames else 1
         failures: list[str] = []
+        if any(int(item["bbox_width"]) == 0 or int(item["bbox_height"]) == 0 for item in metrics):
+            failures.append("empty frame in generated sequence")
         max_edge_pixels = max((int(item["edge_pixels"]) for item in metrics), default=0)
         max_edge_bleed = max((int(item["edge_bleed_components"]) for item in metrics), default=0)
         max_top_slivers = max((int(item["thin_top_sliver_components"]) for item in metrics), default=0)
@@ -1007,6 +1009,16 @@ def temporal_metrics(frames: list[Image.Image], metrics: list[dict[str, object]]
     }
 
 
+def review_pairs(temporal: dict, frame_count: int) -> list[list[int]]:
+    """One-based adjacent pairs ranked by pixel difference, plus the loop seam."""
+    diffs = temporal.get("diff_means", [])
+    ranked = sorted(range(len(diffs)), key=lambda i: float(diffs[i]), reverse=True)[:3]
+    pairs = [[i + 1, i + 2] for i in ranked]
+    if frame_count > 1:
+        pairs.append([frame_count, 1])
+    return pairs
+
+
 def inspect_summary(payload: dict[str, object]) -> dict[str, object]:
     temporal = payload.get("temporal") if isinstance(payload.get("temporal"), dict) else {}
     return {
@@ -1026,6 +1038,10 @@ def inspect_summary(payload: dict[str, object]) -> dict[str, object]:
         "scale_step_ratio_max": round(float(temporal.get("scale_step_ratio_max", 0.0)), 3),
         "diff_outlier_ratio": round(float(temporal.get("diff_outlier_ratio", 0.0)), 3),
         "loop_diff_ratio": round(float(temporal.get("loop_diff_ratio", 0.0)), 3),
+        "center_step_max_px": round(float(temporal.get("center_step_max", 0.0)), 3),
+        "diff_mean_max": round(float(temporal.get("diff_mean_max", 0.0)), 3),
+        "loop_diff_mean": round(float(temporal.get("loop_diff_mean", 0.0)), 3),
+        "review_pairs": review_pairs(temporal, int(payload.get("frames", 0))),
     }
 
 
@@ -1051,6 +1067,8 @@ def cmd_inspect_sheet(args: argparse.Namespace) -> None:
     cell_width = cell[0] // args.cols
     ok = (
         len(frames) >= args.min_frames
+        and len(widths) == len(frames)
+        and len(heights) == len(frames)
         and width_ratio <= args.max_scale_ratio
         and height_ratio <= args.max_scale_ratio
         and center_drift <= args.max_center_drift * max(cell_width, 1)

@@ -510,6 +510,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     if plan_path.exists() and not args.force:
         raise SystemExit(f"Plan already exists: {plan_path}")
 
+    video_mode = args.motion == "animated" and args.animated_source_mode in VIDEO_SOURCE_MODES
     stickers = []
     roles = portfolio_roles(args.count)
     for i in range(1, args.count + 1):
@@ -544,7 +545,16 @@ def cmd_init(args: argparse.Namespace) -> None:
                     "social_safety": None,
                     "rationale": "",
                 },
-                "motion_profile": "controlled_full_body" if args.motion == "animated" else "static",
+                "motion_profile": "single_limb" if args.motion == "animated" else "static",
+                "sheet_source_path": "",
+                "candidate_id": "",
+                "rows": 4,
+                "cols": 4,
+                "frame_duration_ms": 80,
+                "phases": [],
+                "locked_elements": [],
+                "moving_elements": [],
+                "visual_review": {"raw_sheet_ok": False, "notes": ""},
                 "start_frame_source_path": str((out_dir / "start_frames" / f"{index}.png").resolve()),
                 "end_frame_source_path": str((out_dir / "end_frames" / f"{index}.png").resolve()),
                 "video_prompt_path": str((out_dir / "prompts" / f"{index}-video-prompt.txt").resolve()),
@@ -552,7 +562,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         )
 
     plan = {
-        "version": 2,
+        "version": 3,
         "pack_name": args.pack_name,
         "slug": args.slug or out_dir.name,
         "output_dir": str(out_dir),
@@ -560,8 +570,8 @@ def cmd_init(args: argparse.Namespace) -> None:
         "count": args.count,
         "motion": args.motion,
         "animated_source_mode": args.animated_source_mode if args.motion == "animated" else None,
-        "video_input_mode": "first_last_frame" if args.motion == "animated" else None,
-        "video_model": args.video_model,
+        "video_input_mode": "first_last_frame" if video_mode else None,
+        "video_model": args.video_model if video_mode else None,
         "video_audio_policy": "silent",
         "video_duration": args.video_duration,
         "video_resolution": args.video_resolution,
@@ -593,6 +603,8 @@ def cmd_init(args: argparse.Namespace) -> None:
             "reward-thanks": {"copy": "", "design_brief": ""},
         },
     }
+    if args.count == 1:
+        plan["assets"] = {}
     write_json(plan_path, plan)
     write_json(state_path, new_state(plan_path, plan))
     write_json(
@@ -601,8 +613,8 @@ def cmd_init(args: argparse.Namespace) -> None:
             "created_at": now(),
             "motion": args.motion,
             "animated_source_mode": args.animated_source_mode if args.motion == "animated" else None,
-            "video_input_mode": "first_last_frame" if args.motion == "animated" else None,
-            "video_model": args.video_model,
+            "video_input_mode": "first_last_frame" if video_mode else None,
+            "video_model": args.video_model if video_mode else None,
             "downgrade_requires_user_approval": True,
             "forbidden_without_approval": sorted(FORBIDDEN_MODES),
         },
@@ -637,7 +649,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
     if lock_path.exists():
         lock = read_json(lock_path)
         locked_mode = lock.get("animated_source_mode")
-        if motion == "animated" and locked_mode in VIDEO_SOURCE_MODES and plan.get("animated_source_mode") != locked_mode:
+        if motion == "animated" and locked_mode in VIDEO_SOURCE_MODES | {"sprite_sheet"} and plan.get("animated_source_mode") != locked_mode:
             errors.append(
                 "animated_source_mode changed from locked %s to %s without explicit approval"
                 % (locked_mode, plan.get("animated_source_mode"))
@@ -655,7 +667,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
     if args.require_creative:
         creative_report = creative_plan_report(plan)
         errors.extend(f"creative: {message}" for message in creative_report["errors"])
-    if args.require_keyframes:
+    if args.require_keyframes and plan.get("animated_source_mode") in VIDEO_SOURCE_MODES:
         for index, sticker in sticker_map(plan).items():
             start = sticker_path(sticker, "start_frame_source_path", default_path(out_dir, "start_frames", index, ".png"))
             end = sticker_path(sticker, "end_frame_source_path", default_path(out_dir, "end_frames", index, ".png"))
@@ -866,6 +878,86 @@ def cmd_process_videos(args: argparse.Namespace) -> None:
         raise SystemExit("Video processing failures: " + ", ".join(failures))
 
 
+def run_logged(command: list[str], log_path: Path) -> None:
+    """Preserve full subprocess evidence on disk without flooding the conversation."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w", encoding="utf-8") as log:
+        result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+    if result.returncode:
+        raise subprocess.CalledProcessError(result.returncode, command)
+
+
+def cmd_process_sheets(args: argparse.Namespace) -> None:
+    plan, state, out_dir, state_path = load_plan_and_state(args.plan, args.state)
+    if plan.get("motion") != "animated" or plan.get("animated_source_mode") != "sprite_sheet":
+        raise SystemExit("process-sheets requires animated sprite_sheet mode")
+    cmd_validate(argparse.Namespace(plan=args.plan, state=args.state,
+        require_creative=False, require_secrets=False, require_keyframes=False))
+    manifest_path = out_dir / "manifest.json"
+    if not manifest_path.exists():
+        write_json(manifest_path, plan)
+    manifest = read_json(manifest_path)
+    if manifest.get("animated_source_mode") != "sprite_sheet":
+        raise SystemExit("manifest source mode does not match plan")
+    for index in parse_indices(args.indices, plan):
+        sticker = sticker_map(plan)[index]
+        source = Path(sticker.get("sheet_source_path") or "").expanduser()
+        candidate_id = str(sticker.get("candidate_id") or "")
+        if not source.is_absolute() or not source.is_file():
+            raise SystemExit(f"{index}: sheet_source_path must be an existing absolute file")
+        if not candidate_id or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for c in candidate_id):
+            raise SystemExit(f"{index}: provide a unique filename-safe candidate_id")
+        review = sticker.get("visual_review") or {}
+        if review.get("raw_sheet_ok") is not True or not review.get("notes"):
+            raise SystemExit(f"{index}: raw sheet needs visual review and notes")
+        rows, cols = int(sticker.get("rows", 4)), int(sticker.get("cols", 4))
+        duration = int(sticker.get("frame_duration_ms", 80))
+        if rows <= 0 or cols <= 0 or rows * cols < 12 or duration < 20 or duration % 10:
+            raise SystemExit(f"{index}: require positive grid, >=12 frames and duration >=20ms in 10ms steps")
+        with Image.open(source) as im:
+            if im.width < cols or im.height < rows:
+                raise SystemExit(f"{index}: grid has more cells than image pixels")
+        candidate = out_dir / "raw" / f"{candidate_id}.png"
+        inspection = out_dir / "raw" / f"{candidate_id}.inspect.json"
+        if candidate.exists() and candidate.read_bytes() != source.read_bytes():
+            raise SystemExit(f"{index}: candidate id already belongs to different bytes")
+        if source.resolve() != candidate.resolve():
+            shutil.copy2(source, candidate)
+        entry = state.setdefault("stickers", {}).setdefault(index, {})
+        entry.update({"status": "sheet_inspecting", "candidate_id": candidate_id})
+        save_state(state_path, state)
+        step = "inspect"
+        log_path = out_dir / "reports" / f"{candidate_id}-{step}.log"
+        try:
+            run_logged([sys.executable, str(PACK_SCRIPT), "inspect-sheet", "--input", str(candidate),
+                "--output", str(inspection), "--rows", str(rows), "--cols", str(cols), "--reject", "--summary"], log_path)
+            step = "promote"
+            log_path = out_dir / "reports" / f"{candidate_id}-{step}.log"
+            run_logged([sys.executable, str(PACK_SCRIPT), "promote-candidate", "--output-dir", str(out_dir),
+                "--index", index, "--candidate-id", candidate_id, "--candidate", str(candidate),
+                "--inspect", str(inspection), "--source", str(source), "--manifest", str(manifest_path),
+                "--selection-reason", str(review["notes"])], log_path)
+            step = "encode"
+            log_path = out_dir / "reports" / f"{candidate_id}-{step}.log"
+            run_logged([sys.executable, str(PACK_SCRIPT), "process-sticker", "--input", str(out_dir / "raw" / f"{index}.png"),
+                "--index", index, "--output-dir", str(out_dir), "--motion", "animated",
+                "--rows", str(rows), "--cols", str(cols), "--duration", str(duration),
+                "--meaning", str(sticker.get("meaning", ""))], log_path)
+        except (subprocess.CalledProcessError, SystemExit) as exc:
+            entry.update({"status": "failed", "error": f"{step} failed", "log_path": str(log_path)})
+            save_state(state_path, state)
+            print(json.dumps({"index": index, "candidate": candidate_id, "ok": False,
+                "step": step, "log": str(log_path), "inspection": str(inspection)}, ensure_ascii=False))
+            raise
+        entry.update({"status": "gif_done", "selected_candidate_id": candidate_id,
+            "source_path": str(source), "inspect_path": str(inspection), "playback_review_required": True})
+        entry.pop("error", None)
+        save_state(state_path, state)
+        print(json.dumps({"index": index, "candidate": candidate_id, "status": "gif_done",
+            "gif": str(out_dir / "main" / f"{index}.gif"), "playback_review_required": True}))
+    print("Sheets processed; review decoded GIF playback before final QC.")
+
+
 def cmd_make_preview(args: argparse.Namespace) -> None:
     plan, _state, out_dir, _state_path = load_plan_and_state(args.plan, args.state)
     output = args.output or (out_dir / "preview-grid.jpg")
@@ -906,6 +998,7 @@ def cmd_qc(args: argparse.Namespace) -> None:
         "--summary-limit",
         str(args.summary_limit),
     ]
+    command.extend(["--pack-type", str(plan.get("pack_type", "album"))])
     if args.no_require_manifest:
         command.append("--no-require-manifest")
     run_checked(command)
@@ -913,6 +1006,10 @@ def cmd_qc(args: argparse.Namespace) -> None:
 
 def cmd_package(args: argparse.Namespace) -> None:
     plan, _state, out_dir, _state_path = load_plan_and_state(args.plan, args.state)
+    cmd_validate(argparse.Namespace(plan=args.plan, state=args.state,
+        require_creative=False, require_secrets=False, require_keyframes=False))
+    cmd_qc(argparse.Namespace(plan=args.plan, state=args.state,
+        report_name="qc-report.json", summary_limit=8, no_require_manifest=False))
     archive_base = args.output
     if archive_base is None:
         archive_base = out_dir.with_suffix("")
@@ -933,7 +1030,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--slug")
     init.add_argument("--count", type=int, choices=[1, 8, 16, 24], required=True)
     init.add_argument("--motion", choices=["static", "animated"], required=True)
-    init.add_argument("--animated-source-mode", choices=["green_screen_video", "background_video", "sprite_sheet"], default="green_screen_video")
+    init.add_argument("--animated-source-mode", choices=["green_screen_video", "background_video", "sprite_sheet"], default="sprite_sheet")
     init.add_argument("--video-model", default=DEFAULT_VIDEO_MODEL)
     init.add_argument("--video-duration", type=int, default=5)
     init.add_argument("--video-resolution", default="480p")
@@ -979,6 +1076,12 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("--colors", type=int, default=96)
     process.set_defaults(func=cmd_process_videos)
 
+    sheets = subparsers.add_parser("process-sheets", help="Inspect and process image-generated frame sheets.")
+    sheets.add_argument("--plan", required=True, type=Path)
+    sheets.add_argument("--state", type=Path)
+    sheets.add_argument("--indices")
+    sheets.set_defaults(func=cmd_process_sheets)
+
     preview = subparsers.add_parser("make-preview", help="Create preview-grid.jpg through the shared pack script.")
     preview.add_argument("--plan", required=True, type=Path)
     preview.add_argument("--state", type=Path)
@@ -1007,7 +1110,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except subprocess.CalledProcessError as exc:
+        # Expected command failures already have compact output and persisted reports.
+        raise SystemExit(exc.returncode) from None
 
 
 if __name__ == "__main__":

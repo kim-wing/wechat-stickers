@@ -2,9 +2,24 @@
 
 English | [中文](#中文说明)
 
-Generate WeChat sticker packs from a character idea, theme, or reference image. This Codex skill helps create static sticker albums, Seedance-powered animated GIF albums, album assets, metadata, preview grids, and QC reports.
+Generate WeChat sticker packs from a character idea, theme, or reference image. This Codex skill helps create static sticker albums, image-generated sequential-frame GIF albums and optional Seedance animation, album assets, metadata, preview grids, and QC reports.
 
-从角色设定、主题或参考图出发，生成微信表情包。这个 Codex Skill 支持静态表情专辑、基于 Seedance 视频的动态 GIF 表情、专辑素材、元数据、预览图和 QC 报告。
+从角色设定、主题或参考图出发，生成微信表情包。这个 Codex Skill 支持静态表情专辑、基于图像连续帧的动态 GIF 表情及可选 Seedance 视频路线、专辑素材、元数据、预览图和 QC 报告。
+
+更新说明：[2026-09-10 连续帧优先更新](docs/frame-first-update-2026-09-10.md)，含迁移方式、两次实测结果和已知限制。
+
+## Frame-first workflow / 连续帧优先
+
+新版从「发送情境 → 动作阶段 → 连续帧 → GIF 验收」出发。默认 `sprite_sheet` 是图像连续帧的兼容字段名，不再需要视频回退批准。旧视频示例仍是历史案例，不代表新版默认路线。
+
+```bash
+python3 scripts/run_wechat_sticker_pipeline.py init --output-dir /absolute/job --pack-name "连续帧表情" --count 8 --motion animated
+# Fill creative plan, generate/review a pilot sheet, record sheet_source_path,
+# candidate_id, rows, cols, frame_duration_ms and visual_review on that sticker.
+python3 scripts/run_wechat_sticker_pipeline.py process-sheets --plan /absolute/job/sticker-plan.json --indices 01
+```
+
+Read [sequential-frame workflow](references/sequential-frames.md) for prompts and acceptance. Image generation supplies the motion; local scripts split/key/encode and audit. Model upgrades do not guarantee coherence. The existing >=12-frame checks remain conservative local defaults; frame count alone is not quality. `package` now reruns QC before creating an archive.
 
 ## Mature Examples
 
@@ -31,7 +46,7 @@ More notes: [examples/README.md](examples/README.md)
 ## What It Supports
 
 - Static WeChat sticker albums: 8, 16, or 24 stickers.
-- Animated WeChat sticker albums through Doubao Seedance video generation.
+- Animated WeChat sticker albums from generated sequential-frame sheets; optional Seedance video.
 - Transparent green-screen GIF and designed-background GIF workflows.
 - Album assets: cover, chat icon, banner, reward guide image, reward thanks image.
 - Metadata, manifest, thumbnails, preview grid, QC reports, and zip packaging.
@@ -40,7 +55,7 @@ More notes: [examples/README.md](examples/README.md)
 ## 支持能力
 
 - 静态微信表情专辑：8 / 16 / 24 张。
-- 基于豆包 Seedance 视频生成的动态微信表情专辑。
+- 默认通过图像连续帧生成动态微信表情；豆包 Seedance 视频作为可选路线。
 - 透明绿幕 GIF 和有主题背景 GIF 两种动态路线。
 - 专辑素材：封面、聊天面板图标、详情页横幅、赞赏引导图、赞赏致谢图。
 - 元数据、manifest、缩略图、预览宫格、QC 报告和 zip 打包。
@@ -122,9 +137,9 @@ Use $wechat-stickers to create a 16-pack animated WeChat sticker album.
 
 ## Seedance API Setup / Seedance API 申请与配置
 
-Animated sticker generation uses Volcengine Ark video generation API with Doubao Seedance 1.5 Pro by default.
+The optional video route uses Volcengine Ark with Doubao Seedance 1.5 Pro. The default frame-sheet route does not require Ark.
 
-动态表情默认使用火山方舟视频生成 API，模型路线为豆包 Seedance 1.5 Pro。
+仅可选视频路线使用火山方舟 API；默认连续帧路线无需 Ark Key。
 
 Set your key as an environment variable:
 
@@ -229,7 +244,7 @@ preview-grid.jpg
 qc-report.json
 ```
 
-## Deterministic Pipeline Commands / 确定性流水线命令
+## Optional Video Pipeline Commands / 可选视频流水线命令
 
 The skill uses image generation for creative source art. The scripts handle deterministic production stages after source files exist.
 
@@ -309,7 +324,7 @@ python3 scripts/run_wechat_sticker_pipeline.py package \
 
 1. 先确认 8 / 16 / 24 张、静态还是动态、透明还是有背景、主题和角色。
 2. 静态表情优先每张单独生成原创素材，再统一后处理。
-3. 动态表情默认走 Seedance 首尾帧视频路线。
+3. 动态表情默认走图像连续帧路线，先验证动作试样，再批量生成。
 4. 先做 1 个 pilot，通过后再批量生成。
 5. 用 `sticker-plan.json` 和 `run-state.json` 记录每个产物来源。
 6. 最后生成 preview-grid、metadata、QC 报告和 zip。
