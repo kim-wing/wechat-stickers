@@ -28,10 +28,10 @@ class FramePipelineTest(unittest.TestCase):
     def test_defaults_need_no_video_secrets_or_keyframes(self):
         plan = pipeline.read_json(self.plan_path)
         self.assertEqual(plan['animated_source_mode'], 'sprite_sheet')
-        self.assertIsNone(plan['video_model'])
-        self.assertIsNone(plan['video_input_mode'])
+        self.assertNotIn('video_model', plan)
+        self.assertNotIn('video_input_mode', plan)
         with patch.dict('os.environ', {}, clear=True):
-            self.run_command('validate', '--plan', str(self.plan_path), '--require-secrets', '--require-keyframes')
+            self.run_command('validate', '--plan', str(self.plan_path))
         with self.assertRaises(SystemExit):
             self.run_command('submit-videos', '--plan', str(self.plan_path))
 
@@ -86,6 +86,33 @@ class FramePipelineTest(unittest.TestCase):
         self.assertEqual(len(frames), 16)
         self.assertEqual(sum(f.width for f in frames[:4]), 1254)
         self.assertEqual(sum(frames[i].height for i in (0, 4, 8, 12)), 1254)
+
+    def test_native_alpha_preserves_foreground_and_legacy_keying(self):
+        spec = importlib.util.spec_from_file_location('pack_alpha', ROOT / 'scripts/wechat_sticker_pack.py')
+        pack = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pack)
+        im = Image.new('RGBA', (3, 1), (0, 0, 0, 0))
+        im.putpixel((1, 0), (255, 0, 255, 255))
+        im.putpixel((2, 0), (100, 60, 90, 128))
+        result = pack.prepare_transparent_source(im, 80, 96)
+        self.assertEqual(result.tobytes(), im.tobytes())
+        opaque = Image.new('RGB', (2, 1), '#ff00ff')
+        opaque.putpixel((1, 0), (255, 255, 0))
+        result = pack.prepare_transparent_source(opaque, 80, 96)
+        self.assertEqual(result.getpixel((0, 0))[3], 0)
+        self.assertEqual(result.getpixel((1, 0)), (255, 255, 0, 255))
+
+    def test_album_cannot_omit_reward_plan_silently(self):
+        plan = pipeline.read_json(self.plan_path)
+        plan.update(count=8, pack_type='album', reward_assets=True)
+        plan['stickers'] = [dict(plan['stickers'][0], index=f'{i:02d}') for i in range(1, 9)]
+        plan['assets'] = {'cover': {}, 'icon': {}, 'banner': {}}
+        pipeline.write_json(self.plan_path, plan)
+        with self.assertRaises(SystemExit):
+            self.run_command('validate', '--plan', str(self.plan_path))
+        plan['assets'].update({'reward-guide': {}, 'reward-thanks': {}})
+        pipeline.write_json(self.plan_path, plan)
+        self.run_command('validate', '--plan', str(self.plan_path))
 
     def test_package_refuses_missing_outputs(self):
         import subprocess

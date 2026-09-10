@@ -1,6 +1,6 @@
 ---
 name: wechat-stickers
-description: "Design and generate socially usable WeChat sticker packs from characters, themes, or reference images. Use for static stickers, image-generated sequential-frame GIFs, optional video-derived animation, album assets, metadata, and delivery QC."
+description: "Design and generate socially usable WeChat sticker packs from characters, themes, or reference images. Use for static stickers, image-generated sequential-frame GIFs, album assets, metadata, and delivery QC."
 ---
 
 # WeChat Stickers
@@ -12,11 +12,9 @@ A sticker performs a social action. Start with who sends it, to whom, after what
 Separate three decisions:
 1. **Intent:** sending situation, character behavior, exact copy, punchline.
 2. **Motion:** what changes over time and what must remain invariant.
-3. **Transport:** generated sheet → frames → GIF, or optional video → frames → GIF.
+3. **Transport:** generated sheet → frames → GIF.
 
 Default animated transport is image-generated sequential frames (`animated_source_mode: sprite_sheet`, retained for script compatibility). This is a primary production route, not a downgrade requiring permission. Use the available image-generation tool with the user's chosen model where selectable; do not invent a model parameter or claim GPT Image 2.5 was used when the tool does not report it. Capability improvements justify trying this route, not skipping visual validation.
-
-Choose Seedance only for an explicit video request or when a pilot demonstrates that continuous complex motion needs it. Read [references/video-workflow.md](references/video-workflow.md) only for that route. Existing video projects retain their chosen mode. Record an intentional mode change; never substitute a static transform for generated motion.
 
 ## Plan and pilot
 
@@ -36,13 +34,13 @@ Produce and review pilot animation before batching. Lock identity from a good re
 
 ## Sequential-frame animation
 
-Read [references/sequential-frames.md](references/sequential-frames.md) before generating animation. For a single test GIF, use the compact plan and targeted failure diagnosis there; do not load album/video references. It defines the frame contract, prompt, processing commands and review criteria.
+Read [references/sequential-frames.md](references/sequential-frames.md) before generating animation. For a single test GIF, use the compact plan and targeted failure diagnosis there; do not load album references. It defines the frame contract, prompt, processing commands and review criteria.
 
 Plan a single readable action with fixed camera, identity, palette, body proportions, background and caption. Generate all phases together in an equal-cell sheet where possible. A sheet is one sticker's timeline, never a pack of unrelated expressions. Specify chronological row-major ordering, safe cell margins and a loop-compatible final phase.
 
 Start with 12 or 16 frames according to action and available per-cell resolution. These are practical presets for the existing conservative QC, not platform requirements or guarantees of smoothness. A short hold may need fewer frames; a walk may need more. Do not inflate counts with duplicate frames. Lower-count production needs a documented matching QC profile across inspection and final QC; the default pipeline currently requires at least 12 frames.
 
-Generate artwork with image generation. Local code may split, key, uniformly scale, encode and audit it; it must not synthesize the character's performance from a still. Use the same transform across the sequence so normalization does not erase intended motion or create jitter. Do not blend inconsistent frames to hide morphing.
+Request native transparent PNG by default and verify its actual alpha. Preserve supplied alpha; chroma keying is only for opaque legacy sources. Generate artwork with image generation. Local code may split, uniformly scale, encode and audit it; it must not synthesize the character's performance from a still. Use the same transform across the sequence so normalization does not erase intended motion or create jitter. Do not blend inconsistent frames to hide morphing.
 
 If a candidate fails, diagnose identity, phase ordering, grid geometry, typography, keying, or loop timing separately. Repair/regenerate from the locked reference and full motion contract. After two failed revisions of the same idea, change the motion design or report the specific blocker; avoid an unbounded retry loop. A new model name alone is not a reason to regenerate an entire album.
 
@@ -54,7 +52,7 @@ Generate one complete artwork per static sticker, with a distinct pose and expre
 python3 scripts/wechat_sticker_pack.py process-sticker --input /absolute/source.png --index 1 --output-dir /absolute/job --motion static --meaning "收到"
 ```
 
-For albums, read [references/wechat-spec.md](references/wechat-spec.md) before asset creation and packaging. Generate cover, icon, banner and requested reward assets with the same identity. Design banner/reward typography, background and composition together, at the target aspect ratio. Use `make-asset` for deterministic conversion. Keep original sources and record their provenance in `manifest.json`.
+For albums, read [references/wechat-spec.md](references/wechat-spec.md) before asset creation and packaging. By default every album includes cover, icon, banner, reward-guide (赞赏引导图) and reward-thanks (赞赏感谢图), with the same identity. Generate both reward images without waiting for a separate request. Omit them only when the user explicitly excludes them; record reward_assets=false and reward_assets_omission_reason in the plan. Single stickers do not require these assets. Keep all required asset entries in the plan and report pending/failed assets when showing a preview. A preview does not cancel the remaining album deliverables. Design banner/reward typography, background and composition together, at the target aspect ratio. Use `make-asset` for deterministic conversion. Keep original sources and record their provenance in `manifest.json`.
 
 Retain the pack's existing no-system-emoji and no-national-flags submission design conventions; do not confuse these conventions with universal content rules. Check current platform requirements when claiming submission readiness. Do not claim that technical QC guarantees platform acceptance.
 

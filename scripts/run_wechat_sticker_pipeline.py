@@ -3,7 +3,7 @@
 
 This script intentionally does not call image generation. Codex still creates
 the creative source images, then records their paths in sticker-plan.json. This
-helper owns deterministic production stages: Seedance video tasks, GIF
+helper owns deterministic production stages: frame-sheet inspection, GIF
 postprocessing, preview grids, QC, and packaging.
 """
 
@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -24,12 +23,8 @@ from PIL import Image
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SEEDANCE_SCRIPT = SCRIPT_DIR / "seedance_video_task.py"
-GREEN_VIDEO_SCRIPT = SCRIPT_DIR / "process_seedance_green_video.py"
 PACK_SCRIPT = SCRIPT_DIR / "wechat_sticker_pack.py"
 
-VIDEO_SOURCE_MODES = {"green_screen_video", "background_video"}
-DEFAULT_VIDEO_MODEL = "doubao-seedance-1-5-pro-251215"
 FORBIDDEN_MODES = {
     "local_composite_preview",
     "user_reference_local_composite_preview",
@@ -50,10 +45,6 @@ OUTPUT_FOLDERS = (
     "main",
     "thumbs",
     "frames",
-    "keyed_frames",
-    "start_frames",
-    "end_frames",
-    "video",
     "reports",
     "prompts",
     "candidates",
@@ -403,42 +394,6 @@ def creative_plan_report(plan: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_video_prompt(plan: dict[str, Any], sticker: dict[str, Any]) -> str:
-    theme = plan.get("theme", "")
-    character = plan.get("character", "")
-    action = sticker.get("action") or sticker.get("scene") or ""
-    text = sticker.get("text") or sticker.get("copy") or ""
-    mode = plan.get("animated_source_mode", "green_screen_video")
-    background = "pure flat #00FF00 green screen background" if mode == "green_screen_video" else "stable theme-related designed background"
-    direction = plan.get("creative_direction") if isinstance(plan.get("creative_direction"), dict) else {}
-    persona = direction.get("persona") if isinstance(direction.get("persona"), dict) else {}
-    lines = [
-        "Fixed camera, fixed framing, stable character identity, stable subject scale.",
-        "No audio, no watermark, no scene cuts, no text morphing, no camera zoom.",
-        f"Target audience: {direction.get('target_audience', '')}",
-        f"Relationship context: {direction.get('relationship_context', '')}",
-        f"Conversation register: {direction.get('conversation_register', '')}",
-        f"Persona core: {persona.get('core', '')}",
-        f"Persona worldview: {persona.get('worldview', '')}",
-        f"Persona social posture: {persona.get('social_posture', '')}",
-        f"Persona signature reaction: {persona.get('signature_reaction', '')}",
-        f"Persona visual hook: {persona.get('visual_hook', '')}",
-        f"Character: {character}",
-        f"Theme: {theme}",
-        f"Trigger utterance or event: {sticker.get('trigger_utterance', '')}",
-        f"Surface message: {sticker.get('surface_message', '')}",
-        f"Hidden emotion: {sticker.get('hidden_emotion', '')}",
-        f"Social move: {sticker.get('social_move', '')}",
-        f"Meme mechanism: {sticker.get('meme_mechanism', '')}",
-        f"Visual hook: {sticker.get('visual_hook', '')}",
-        f"Punchline frame: {sticker.get('punchline_frame', '')}",
-        f"Sticker action: {action}",
-        f"Locked visible text/caption if present: {text}",
-        f"Background policy: {background}.",
-        "Make the action reveal the relationship between the surface message and hidden emotion.",
-        "Create a loop-friendly motion whose final pose returns naturally toward the first frame and whose punchline remains readable as a still.",
-    ]
-    return "\n".join(line for line in lines if line.split(":", 1)[-1].strip())
 
 
 def command_text(command: list[str]) -> str:
@@ -449,57 +404,6 @@ def run_checked(command: list[str]) -> None:
     subprocess.run(command, check=True)
 
 
-def process_background_video(
-    video: Path,
-    frames_dir: Path,
-    gif_path: Path,
-    thumb_path: Path,
-    sample_count: int,
-    source_duration: int,
-    frame_duration: int,
-    colors: int,
-) -> None:
-    if frames_dir.exists():
-        shutil.rmtree(frames_dir)
-    frames_dir.mkdir(parents=True, exist_ok=True)
-    gif_path.parent.mkdir(parents=True, exist_ok=True)
-    thumb_path.parent.mkdir(parents=True, exist_ok=True)
-    pattern = frames_dir / "frame_%04d.png"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(video),
-            "-vf",
-            "fps=%s/%s,scale=240:240:force_original_aspect_ratio=decrease,pad=240:240:(ow-iw)/2:(oh-ih)/2:color=0xffffff"
-            % (sample_count, source_duration),
-            "-frames:v",
-            str(sample_count),
-            str(pattern),
-        ],
-        check=True,
-    )
-    frames = [Image.open(path).convert("RGB") for path in sorted(frames_dir.glob("frame_*.png"))]
-    if not frames:
-        raise SystemExit(f"No frames extracted from {video}")
-    paletted = [
-        frame.quantize(colors=colors, method=Image.Quantize.MEDIANCUT)
-        for frame in frames
-    ]
-    paletted[0].save(
-        gif_path,
-        save_all=True,
-        append_images=paletted[1:],
-        loop=0,
-        duration=frame_duration,
-        disposal=2,
-        optimize=False,
-    )
-    frames[0].resize((120, 120), Image.Resampling.LANCZOS).save(thumb_path)
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -510,7 +414,6 @@ def cmd_init(args: argparse.Namespace) -> None:
     if plan_path.exists() and not args.force:
         raise SystemExit(f"Plan already exists: {plan_path}")
 
-    video_mode = args.motion == "animated" and args.animated_source_mode in VIDEO_SOURCE_MODES
     stickers = []
     roles = portfolio_roles(args.count)
     for i in range(1, args.count + 1):
@@ -555,9 +458,6 @@ def cmd_init(args: argparse.Namespace) -> None:
                 "locked_elements": [],
                 "moving_elements": [],
                 "visual_review": {"raw_sheet_ok": False, "notes": ""},
-                "start_frame_source_path": str((out_dir / "start_frames" / f"{index}.png").resolve()),
-                "end_frame_source_path": str((out_dir / "end_frames" / f"{index}.png").resolve()),
-                "video_prompt_path": str((out_dir / "prompts" / f"{index}-video-prompt.txt").resolve()),
             }
         )
 
@@ -568,15 +468,9 @@ def cmd_init(args: argparse.Namespace) -> None:
         "output_dir": str(out_dir),
         "pack_type": "single" if args.count == 1 else "album",
         "count": args.count,
+        "reward_assets": args.count > 1,
         "motion": args.motion,
         "animated_source_mode": args.animated_source_mode if args.motion == "animated" else None,
-        "video_input_mode": "first_last_frame" if video_mode else None,
-        "video_model": args.video_model if video_mode else None,
-        "video_audio_policy": "silent",
-        "video_duration": args.video_duration,
-        "video_resolution": args.video_resolution,
-        "video_ratio": args.video_ratio,
-        "video_sample_count": args.video_sample_count,
         "theme": args.theme,
         "character": args.character,
         "creative_direction": {
@@ -613,8 +507,6 @@ def cmd_init(args: argparse.Namespace) -> None:
             "created_at": now(),
             "motion": args.motion,
             "animated_source_mode": args.animated_source_mode if args.motion == "animated" else None,
-            "video_input_mode": "first_last_frame" if video_mode else None,
-            "video_model": args.video_model if video_mode else None,
             "downgrade_requires_user_approval": True,
             "forbidden_without_approval": sorted(FORBIDDEN_MODES),
         },
@@ -632,6 +524,16 @@ def cmd_validate(args: argparse.Namespace) -> None:
         errors.append(f"count must be 1/8/16/24, got {count}")
     if len(stickers) != count:
         errors.append(f"stickers length {len(stickers)} does not match count {count}")
+    if plan.get("pack_type", "album") == "album":
+        required = {"cover", "icon", "banner"}
+        if plan.get("reward_assets", True):
+            required.update({"reward-guide", "reward-thanks"})
+        elif not str(plan.get("reward_assets_omission_reason") or "").strip():
+            errors.append("reward_assets=false requires the user's explicit omission reason")
+        assets = plan.get("assets") or {}
+        for kind in sorted(required):
+            if kind not in assets:
+                errors.append(f"missing required album asset plan: {kind}")
     motion = plan.get("motion")
     if motion not in {"static", "animated"}:
         errors.append(f"invalid motion: {motion}")
@@ -639,17 +541,13 @@ def cmd_validate(args: argparse.Namespace) -> None:
         mode = plan.get("animated_source_mode")
         if mode in FORBIDDEN_MODES:
             errors.append(f"forbidden animated_source_mode without explicit diagnostic approval: {mode}")
-        if mode not in VIDEO_SOURCE_MODES and mode != "sprite_sheet":
+        if mode != "sprite_sheet":
             errors.append(f"invalid animated_source_mode: {mode}")
-        if mode in VIDEO_SOURCE_MODES and plan.get("video_model") != DEFAULT_VIDEO_MODEL:
-            errors.append(f"video_model should default to {DEFAULT_VIDEO_MODEL}")
-        if args.require_secrets and mode in VIDEO_SOURCE_MODES and not os.environ.get("ARK_API_KEY"):
-            errors.append("ARK_API_KEY missing")
     lock_path = out_dir / "pipeline-lock.json"
     if lock_path.exists():
         lock = read_json(lock_path)
         locked_mode = lock.get("animated_source_mode")
-        if motion == "animated" and locked_mode in VIDEO_SOURCE_MODES | {"sprite_sheet"} and plan.get("animated_source_mode") != locked_mode:
+        if motion == "animated" and locked_mode is not None and plan.get("animated_source_mode") != locked_mode:
             errors.append(
                 "animated_source_mode changed from locked %s to %s without explicit approval"
                 % (locked_mode, plan.get("animated_source_mode"))
@@ -659,7 +557,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
         if source in FORBIDDEN_CREATIVE_SOURCES:
             errors.append(f"{index} forbidden creative_source without explicit diagnostic approval: {source}")
         post = str(sticker.get("postprocess_input_path") or "")
-        if post and "/Desktop/" in post and source not in {"image_gen", "seedance_video"}:
+        if post and "/Desktop/" in post and source not in {"image_gen"}:
             errors.append(f"{index} postprocess_input_path appears to use a user/Desktop reference: {post}")
     restricted = contains_restricted_text(plan)
     if restricted:
@@ -667,14 +565,6 @@ def cmd_validate(args: argparse.Namespace) -> None:
     if args.require_creative:
         creative_report = creative_plan_report(plan)
         errors.extend(f"creative: {message}" for message in creative_report["errors"])
-    if args.require_keyframes and plan.get("animated_source_mode") in VIDEO_SOURCE_MODES:
-        for index, sticker in sticker_map(plan).items():
-            start = sticker_path(sticker, "start_frame_source_path", default_path(out_dir, "start_frames", index, ".png"))
-            end = sticker_path(sticker, "end_frame_source_path", default_path(out_dir, "end_frames", index, ".png"))
-            if not start.exists():
-                errors.append(f"{index} missing start frame: {start}")
-            if not end.exists():
-                errors.append(f"{index} missing end frame: {end}")
     if errors:
         print(json.dumps({"ok": False, "errors": errors}, ensure_ascii=False, indent=2))
         raise SystemExit(1)
@@ -706,176 +596,10 @@ def cmd_creative_qc(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
-def submit_one(
-    plan: dict[str, Any],
-    out_dir: Path,
-    index: str,
-    sticker: dict[str, Any],
-    state_path: Path,
-    state: dict[str, Any],
-    dry_run: bool,
-) -> tuple[str, int]:
-    start = sticker_path(sticker, "start_frame_source_path", default_path(out_dir, "start_frames", index, ".png"))
-    end = sticker_path(sticker, "end_frame_source_path", default_path(out_dir, "end_frames", index, ".png"))
-    prompt = sticker_path(sticker, "video_prompt_path", out_dir / "prompts" / f"{index}-video-prompt.txt")
-    video = sticker_path(sticker, "video_source_path", out_dir / "video" / f"{index}.mp4")
-    report = sticker_path(sticker, "video_task_report_path", out_dir / "reports" / f"seedance-task-{index}.json")
-    if not start.exists():
-        raise FileNotFoundError(f"{index} missing start frame: {start}")
-    if not end.exists():
-        raise FileNotFoundError(f"{index} missing end frame: {end}")
-    if not prompt.exists():
-        prompt.parent.mkdir(parents=True, exist_ok=True)
-        prompt.write_text(build_video_prompt(plan, sticker), encoding="utf-8")
-
-    command = [
-        sys.executable,
-        str(SEEDANCE_SCRIPT),
-        "--start",
-        str(start),
-        "--end",
-        str(end),
-        "--prompt",
-        str(prompt),
-        "--video-out",
-        str(video),
-        "--report-out",
-        str(report),
-        "--model",
-        str(plan.get("video_model") or DEFAULT_VIDEO_MODEL),
-        "--duration",
-        str(plan.get("video_duration") or 5),
-        "--resolution",
-        str(plan.get("video_resolution") or "480p"),
-        "--ratio",
-        str(plan.get("video_ratio") or "1:1"),
-    ]
-    if dry_run:
-        print(command_text(command))
-        return index, 0
-
-    item = state.setdefault("stickers", {}).setdefault(index, {})
-    item.update({"status": "video_running", "updated_at": now(), "video_prompt_path": str(prompt), "video_task_report_path": str(report)})
-    save_state(state_path, state)
-    result = subprocess.run(command)
-    item.update({"updated_at": now(), "video_source_path": str(video), "video_task_report_path": str(report)})
-    if result.returncode == 0 and video.exists():
-        item["status"] = "video_done"
-    else:
-        item["status"] = "failed"
-    save_state(state_path, state)
-    return index, result.returncode
 
 
-def cmd_submit_videos(args: argparse.Namespace) -> None:
-    plan, state, out_dir, state_path = load_plan_and_state(args.plan, args.state)
-    if plan.get("motion") != "animated" or plan.get("animated_source_mode") not in VIDEO_SOURCE_MODES:
-        raise SystemExit("submit-videos only supports animated video modes")
-    if not args.dry_run and not os.environ.get("ARK_API_KEY"):
-        raise SystemExit("ARK_API_KEY missing")
-    if int(plan.get("version", 1)) >= 2:
-        creative_report = creative_plan_report(plan)
-        write_json(out_dir / "creative-qc.json", creative_report)
-        if not creative_report["ok"]:
-            raise SystemExit(
-                "creative QC failed before video submission: "
-                + "; ".join(creative_report["errors"][:5])
-            )
-    ensure_dirs(out_dir)
-    stickers = sticker_map(plan)
-    indices = parse_indices(args.indices, plan)
-    if not indices:
-        raise SystemExit("No matching indices")
-    failures = []
-    with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
-        futures = [
-            pool.submit(submit_one, plan, out_dir, index, stickers[index], state_path, state, args.dry_run)
-            for index in indices
-        ]
-        for future in as_completed(futures):
-            index, returncode = future.result()
-            print(f"{index}: returncode={returncode}")
-            if returncode:
-                failures.append(index)
-    if failures:
-        raise SystemExit("Video task failures: " + ", ".join(failures))
 
 
-def cmd_process_videos(args: argparse.Namespace) -> None:
-    plan, state, out_dir, state_path = load_plan_and_state(args.plan, args.state)
-    mode = plan.get("animated_source_mode")
-    if mode not in VIDEO_SOURCE_MODES:
-        raise SystemExit("process-videos only supports green_screen_video/background_video")
-    ensure_dirs(out_dir)
-    stickers = sticker_map(plan)
-    indices = parse_indices(args.indices, plan)
-    failures = []
-    sample_count = args.sample_count or int(plan.get("video_sample_count") or 36)
-    source_duration = int(plan.get("video_duration") or 5)
-    for index in indices:
-        sticker = stickers[index]
-        video = sticker_path(sticker, "video_source_path", out_dir / "video" / f"{index}.mp4")
-        if not video.exists():
-            failures.append(f"{index}: missing video {video}")
-            continue
-        if mode == "green_screen_video":
-            command = [
-                sys.executable,
-                str(GREEN_VIDEO_SCRIPT),
-                "--video",
-                str(video),
-                "--frames-dir",
-                str(out_dir / "frames" / index),
-                "--keyed-dir",
-                str(out_dir / "keyed_frames" / index),
-                "--gif",
-                str(out_dir / "main" / f"{index}.gif"),
-                "--thumb",
-                str(out_dir / "thumbs" / f"{index}.png"),
-                "--sample-count",
-                str(sample_count),
-                "--source-duration",
-                str(source_duration),
-                "--duration",
-                str(args.frame_duration),
-                "--colors",
-                str(args.colors),
-            ]
-            result = subprocess.run(command)
-            returncode = result.returncode
-        else:
-            try:
-                process_background_video(
-                    video,
-                    out_dir / "frames" / index,
-                    out_dir / "main" / f"{index}.gif",
-                    out_dir / "thumbs" / f"{index}.png",
-                    sample_count,
-                    source_duration,
-                    args.frame_duration,
-                    args.colors,
-                )
-                returncode = 0
-            except Exception as exc:
-                print(f"{index}: {exc}")
-                returncode = 1
-        item = state.setdefault("stickers", {}).setdefault(index, {})
-        item.update(
-            {
-                "updated_at": now(),
-                "gif_path": str(out_dir / "main" / f"{index}.gif"),
-                "thumb_path": str(out_dir / "thumbs" / f"{index}.png"),
-                "keyed_frames_dir": str(out_dir / "keyed_frames" / index) if mode == "green_screen_video" else None,
-                "frame_sample_count": sample_count,
-                "status": "gif_done" if returncode == 0 else "failed",
-            }
-        )
-        save_state(state_path, state)
-        print(f"{index}: returncode={returncode}")
-        if returncode:
-            failures.append(index)
-    if failures:
-        raise SystemExit("Video processing failures: " + ", ".join(failures))
 
 
 def run_logged(command: list[str], log_path: Path) -> None:
@@ -892,7 +616,7 @@ def cmd_process_sheets(args: argparse.Namespace) -> None:
     if plan.get("motion") != "animated" or plan.get("animated_source_mode") != "sprite_sheet":
         raise SystemExit("process-sheets requires animated sprite_sheet mode")
     cmd_validate(argparse.Namespace(plan=args.plan, state=args.state,
-        require_creative=False, require_secrets=False, require_keyframes=False))
+        require_creative=False))
     manifest_path = out_dir / "manifest.json"
     if not manifest_path.exists():
         write_json(manifest_path, plan)
@@ -999,6 +723,8 @@ def cmd_qc(args: argparse.Namespace) -> None:
         str(args.summary_limit),
     ]
     command.extend(["--pack-type", str(plan.get("pack_type", "album"))])
+    if plan.get("reward_assets") is False and plan.get("reward_assets_omission_reason"):
+        command.append("--no-require-reward")
     if args.no_require_manifest:
         command.append("--no-require-manifest")
     run_checked(command)
@@ -1007,7 +733,7 @@ def cmd_qc(args: argparse.Namespace) -> None:
 def cmd_package(args: argparse.Namespace) -> None:
     plan, _state, out_dir, _state_path = load_plan_and_state(args.plan, args.state)
     cmd_validate(argparse.Namespace(plan=args.plan, state=args.state,
-        require_creative=False, require_secrets=False, require_keyframes=False))
+        require_creative=False))
     cmd_qc(argparse.Namespace(plan=args.plan, state=args.state,
         report_name="qc-report.json", summary_limit=8, no_require_manifest=False))
     archive_base = args.output
@@ -1030,12 +756,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--slug")
     init.add_argument("--count", type=int, choices=[1, 8, 16, 24], required=True)
     init.add_argument("--motion", choices=["static", "animated"], required=True)
-    init.add_argument("--animated-source-mode", choices=["green_screen_video", "background_video", "sprite_sheet"], default="sprite_sheet")
-    init.add_argument("--video-model", default=DEFAULT_VIDEO_MODEL)
-    init.add_argument("--video-duration", type=int, default=5)
-    init.add_argument("--video-resolution", default="480p")
-    init.add_argument("--video-ratio", default="1:1")
-    init.add_argument("--video-sample-count", type=int, default=36)
+    init.add_argument("--animated-source-mode", choices=["sprite_sheet"], default="sprite_sheet")
     init.add_argument("--theme", default="")
     init.add_argument("--character", default="")
     init.add_argument("--target-audience", default="")
@@ -1047,8 +768,6 @@ def build_parser() -> argparse.ArgumentParser:
     validate = subparsers.add_parser("validate", help="Validate plan shape, policy constraints, optional keyframes and secrets.")
     validate.add_argument("--plan", required=True, type=Path)
     validate.add_argument("--state", type=Path)
-    validate.add_argument("--require-keyframes", action="store_true")
-    validate.add_argument("--require-secrets", action="store_true")
     validate.add_argument("--require-creative", action="store_true")
     validate.set_defaults(func=cmd_validate)
 
@@ -1058,23 +777,6 @@ def build_parser() -> argparse.ArgumentParser:
     creative_qc.add_argument("--report-name", default="creative-qc.json")
     creative_qc.add_argument("--verbose", action="store_true")
     creative_qc.set_defaults(func=cmd_creative_qc)
-
-    submit = subparsers.add_parser("submit-videos", help="Submit first/last-frame Seedance tasks with bounded concurrency.")
-    submit.add_argument("--plan", required=True, type=Path)
-    submit.add_argument("--state", type=Path)
-    submit.add_argument("--indices", help="Comma/range list such as 01,03-06. Defaults to all.")
-    submit.add_argument("--concurrency", type=int, default=4)
-    submit.add_argument("--dry-run", action="store_true")
-    submit.set_defaults(func=cmd_submit_videos)
-
-    process = subparsers.add_parser("process-videos", help="Convert downloaded green-screen MP4 files into transparent GIFs.")
-    process.add_argument("--plan", required=True, type=Path)
-    process.add_argument("--state", type=Path)
-    process.add_argument("--indices", help="Comma/range list such as 01,03-06. Defaults to all.")
-    process.add_argument("--sample-count", type=int)
-    process.add_argument("--frame-duration", type=int, default=70)
-    process.add_argument("--colors", type=int, default=96)
-    process.set_defaults(func=cmd_process_videos)
 
     sheets = subparsers.add_parser("process-sheets", help="Inspect and process image-generated frame sheets.")
     sheets.add_argument("--plan", required=True, type=Path)

@@ -69,7 +69,6 @@ RESTRICTED_VISUAL_POLICY_TERMS = (
     "太阳旗",
     "欧盟旗",
 )
-VIDEO_SOURCE_MODES = {"green_screen_video", "background_video"}
 FORBIDDEN_ANIMATED_SOURCE_MODES = {
     "image_gen_loop",
     "local_loop",
@@ -79,7 +78,7 @@ FORBIDDEN_ANIMATED_SOURCE_MODES = {
     "local_transform_loop",
     "micro_animation_from_still",
 }
-ALLOWED_CREATIVE_SOURCES = {"image_gen", "seedance_video"}
+ALLOWED_CREATIVE_SOURCES = {"image_gen"}
 NEGATED_VISUAL_POLICY_MARKERS = (
     "no ",
     "no_",
@@ -506,14 +505,20 @@ def stabilize_frame_positions(
     return stabilized
 
 
+def prepare_transparent_source(img: Image.Image, threshold: int, softness: int) -> Image.Image:
+    """Preserve supplied alpha; key only opaque legacy sources."""
+    rgba = img.convert("RGBA")
+    if rgba.getchannel("A").getextrema()[0] < 255:
+        return rgba
+    return remove_magenta(rgba, threshold, softness)
+
+
 def iter_input_frames(path: Path, rows: int, cols: int, threshold: int, key_softness: int) -> list[Image.Image]:
-    img = Image.open(path)
-    if getattr(img, "is_animated", False):
-        return [remove_magenta(frame.convert("RGBA"), threshold, key_softness) for frame in ImageSequence.Iterator(img)]
-    cleaned = remove_magenta(img.convert("RGBA"), threshold, key_softness)
-    if rows * cols > 1:
-        return [remove_magenta(frame, threshold, key_softness) for frame in split_grid(cleaned, rows, cols)]
-    return [cleaned]
+    with Image.open(path) as img:
+        if getattr(img, "is_animated", False):
+            return [prepare_transparent_source(frame, threshold, key_softness) for frame in ImageSequence.Iterator(img)]
+        cleaned = prepare_transparent_source(img, threshold, key_softness)
+    return split_grid(cleaned, rows, cols) if rows * cols > 1 else [cleaned]
 
 
 def save_gif(frames: list[Image.Image], path: Path, duration: int, colors: int) -> None:
@@ -794,8 +799,10 @@ def cmd_process_sticker(args: argparse.Namespace) -> None:
 def cmd_make_asset(args: argparse.Namespace) -> None:
     spec = ASSET_SPECS[args.kind]
     img = Image.open(args.input).convert("RGBA")
-    if args.remove_magenta or spec["transparent"]:
+    if args.remove_magenta:
         img = remove_magenta(img, args.threshold, args.key_softness)
+    elif spec["transparent"]:
+        img = prepare_transparent_source(img, args.threshold, args.key_softness)
     transparent = bool(spec["transparent"])
     background = tuple(args.background)
     if transparent or args.asset_fit == "contain":
@@ -1661,110 +1668,6 @@ def frame_count_for_image(path: Path | None) -> int:
         return 0
 
 
-def check_seedance_video_source(
-    report: dict[str, object],
-    label: str,
-    item: dict[str, object],
-    manifest: dict[str, object],
-    postprocess_input_path: Path | None,
-) -> None:
-    model = str(item.get("video_model") or manifest.get("video_model") or "")
-    add_check(report, "seedance-1-5-pro" in model.lower(), f"{label} video_model is Seedance 1.5 Pro")
-
-    audio_policy = str(item.get("video_audio_policy") or manifest.get("video_audio_policy") or "").lower()
-    add_check(report, audio_policy == "silent", f"{label} video_audio_policy is silent")
-
-    video_input_mode = str(item.get("video_input_mode") or manifest.get("video_input_mode") or "first_last_frame").lower()
-    add_check(
-        report,
-        video_input_mode in {"first_last_frame", "first_frame"},
-        f"{label} video_input_mode is first_last_frame or first_frame",
-    )
-    start_frame_path = check_image_gen_path_field(report, label, item, "start_frame_source_path")
-    end_frame_path: Path | None = None
-    if video_input_mode == "first_last_frame":
-        end_frame_path = check_image_gen_path_field(report, label, item, "end_frame_source_path")
-        start_size = image_size_for_qc(start_frame_path)
-        end_size = image_size_for_qc(end_frame_path)
-        if start_size is not None and end_size is not None:
-            add_check(report, start_size == end_size, f"{label} start/end frame sizes match: {start_size} == {end_size}")
-        if start_frame_path is not None and end_frame_path is not None:
-            same_start_end = resolve_for_compare(start_frame_path) == resolve_for_compare(end_frame_path)
-            same_approved = item.get("end_frame_same_as_start_approved") is True
-            same_reason = item.get("end_frame_same_as_start_reason")
-            add_check(
-                report,
-                not same_start_end or same_approved,
-                f"{label} identical start/end frames are explicitly approved",
-            )
-            if same_start_end:
-                add_check(
-                    report,
-                    isinstance(same_reason, str) and bool(same_reason.strip()),
-                    f"{label} identical start/end frames have a loop-closure reason",
-                )
-    else:
-        fallback_reason = item.get("first_frame_only_reason") or manifest.get("first_frame_only_reason")
-        add_check(
-            report,
-            isinstance(fallback_reason, str) and bool(fallback_reason.strip()),
-            f"{label} first-frame-only mode has explicit reason",
-        )
-
-    video_source_path = check_path_field(report, label, item, "video_source_path", expect_file=True)
-    if video_source_path is not None and postprocess_input_path is not None:
-        add_check(
-            report,
-            resolve_for_compare(postprocess_input_path) == resolve_for_compare(video_source_path),
-            f"{label} postprocess_input_path matches video_source_path",
-        )
-
-    prompt_path = check_path_field(report, label, item, "video_prompt_path", expect_file=True)
-    if prompt_path is not None and prompt_path.exists():
-        try:
-            prompt_text = prompt_path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            prompt_text = prompt_path.read_text(encoding="utf-8", errors="ignore")
-        unicode_findings, term_findings = visual_policy_findings(prompt_text)
-        add_check(report, not unicode_findings, f"{label} video prompt has no Unicode emoji characters; found {unicode_findings}")
-        add_check(report, not term_findings, f"{label} video prompt has no unnegated restricted visual-policy terms; found {term_findings}")
-
-    task_report_raw = (
-        item.get("video_task_report_path")
-        or item.get("seedance_task_report_path")
-        or item.get("ark_task_report_path")
-    )
-    task_item = dict(item)
-    if isinstance(task_report_raw, str):
-        task_item["video_task_report_path"] = task_report_raw
-    task_report_path = check_path_field(report, label, task_item, "video_task_report_path", expect_file=True)
-    task_report = read_json_object(task_report_path) if task_report_path is not None else None
-    add_check(report, task_report is not None, f"{label} video_task_report_path is readable JSON object")
-    if task_report is not None:
-        add_check(report, task_report.get("status") == "succeeded", f"{label} Seedance task status is succeeded")
-        report_model = str(task_report.get("model") or "")
-        add_check(report, "seedance-1-5-pro" in report_model.lower(), f"{label} Seedance task model is 1.5 Pro")
-        add_check(report, task_report.get("generate_audio") is False, f"{label} Seedance task generate_audio is false")
-        add_check(report, task_report.get("watermark") is not True, f"{label} Seedance task watermark is not true")
-
-    keyed_frames_dir = check_path_field(report, label, item, "keyed_frames_dir", expect_file=False)
-    keyed_frame_count = count_keyed_output_frames(keyed_frames_dir)
-    add_check(report, keyed_frame_count >= 24, f"{label} keyed output frame count {keyed_frame_count} >= 24 for video mode")
-
-    gif_path = check_path_field(report, label, item, "transparent_gif_source", expect_file=True)
-    gif_frames = frame_count_for_image(gif_path)
-    add_check(report, gif_frames >= 24, f"{label} final GIF frames {gif_frames} >= 24 for video mode")
-    if keyed_frame_count and gif_frames:
-        add_check(report, keyed_frame_count == gif_frames, f"{label} keyed output frame count {keyed_frame_count} matches final GIF frames {gif_frames}")
-    frame_sample_count = item.get("frame_sample_count")
-    if isinstance(frame_sample_count, int):
-        add_check(report, keyed_frame_count == frame_sample_count, f"{label} keyed output frame count {keyed_frame_count} matches frame_sample_count {frame_sample_count}")
-        add_check(report, gif_frames == frame_sample_count, f"{label} final GIF frames {gif_frames} match frame_sample_count {frame_sample_count}")
-
-    if str(item.get("local_loop_fallback") or "").lower() in {"true", "1", "yes"}:
-        add_check(report, False, f"{label} does not use local_loop_fallback")
-    if item.get("image_loop_source_path") or item.get("still_loop_source_path"):
-        add_check(report, False, f"{label} has no still-image loop source path in video mode")
 
 
 def read_json_object(path: Path) -> dict[str, object] | None:
@@ -1779,41 +1682,8 @@ def resolve_for_compare(path: Path) -> Path:
     return path.expanduser().resolve(strict=False)
 
 
-def manifest_uses_video_mode(path: Path) -> bool:
-    manifest = read_json_object(path)
-    if manifest is None:
-        return False
-    if str(manifest.get("motion") or "").lower() != "animated":
-        return False
-    manifest_source_mode = str(manifest.get("animated_source_mode") or "").lower()
-    stickers = manifest.get("stickers")
-    if not isinstance(stickers, list):
-        return manifest_source_mode in VIDEO_SOURCE_MODES
-    for item in stickers:
-        if not isinstance(item, dict):
-            continue
-        item_source_mode = str(item.get("animated_source_mode") or manifest_source_mode).lower()
-        if item_source_mode in VIDEO_SOURCE_MODES or item.get("creative_source") == "seedance_video":
-            return True
-    return False
 
 
-def manifest_uses_green_screen_video(path: Path) -> bool:
-    manifest = read_json_object(path)
-    if manifest is None:
-        return False
-    manifest_source_mode = str(manifest.get("animated_source_mode") or "").lower()
-    if manifest_source_mode == "green_screen_video":
-        return True
-    stickers = manifest.get("stickers")
-    if not isinstance(stickers, list):
-        return False
-    for item in stickers:
-        if not isinstance(item, dict):
-            continue
-        if str(item.get("animated_source_mode") or manifest_source_mode).lower() == "green_screen_video":
-            return True
-    return False
 
 
 def is_approved_static_text_overlay(item: dict[str, object]) -> bool:
@@ -1996,9 +1866,6 @@ def check_manifest(
                 source_path,
                 allow_derived_input=is_approved_static_text_overlay(item),
             )
-        elif source == "seedance_video":
-            postprocess_input_path = check_postprocess_input_path(report, label, item, None)
-            check_seedance_video_source(report, label, item, manifest, postprocess_input_path)
 
     sticker_source_paths: list[str] = []
     stickers = manifest.get("stickers")
@@ -2011,15 +1878,9 @@ def check_manifest(
                 item_source_mode = str(item.get("animated_source_mode") or manifest_source_mode).lower()
                 add_check(
                     report,
-                    item_source_mode not in FORBIDDEN_ANIMATED_SOURCE_MODES,
-                    f"{label} animated_source_mode is not still/local loop: {item_source_mode!r}",
+                    item_source_mode == "sprite_sheet",
+                    f"{label} animated_source_mode is sprite_sheet: {item_source_mode!r}",
                 )
-                if item_source_mode in VIDEO_SOURCE_MODES:
-                    add_check(
-                        report,
-                        item.get("creative_source") == "seedance_video",
-                        f"{label} video-mode creative_source is seedance_video",
-                    )
             if str(manifest.get("motion")) == "static" and isinstance(item, dict):
                 overlay_used = is_approved_static_text_overlay(item) or any(
                     bool(item.get(key))
@@ -2056,7 +1917,7 @@ def check_manifest(
                     postprocess_input_path = check_postprocess_input_path(report, label, item, source_path)
                     check_animated_candidate_audit(report, label, item, source_path, postprocess_input_path)
                 else:
-                    add_check(report, True, f"{label} animated candidate audit is replaced by video provenance audit")
+                    add_check(report, False, f"{label} animated candidate requires image_gen provenance")
     add_check(
         report,
         len(set(sticker_source_paths)) == len(sticker_source_paths),
@@ -2171,8 +2032,6 @@ def cmd_qc(args: argparse.Namespace) -> None:
     main_dir = out_dir / "main"
     thumb_dir = out_dir / "thumbs"
     manifest_path = args.manifest or (out_dir / "manifest.json")
-    video_mode_qc = args.motion == "animated" and manifest_uses_video_mode(manifest_path)
-    green_screen_video_qc = args.motion == "animated" and manifest_uses_green_screen_video(manifest_path)
 
     main_extension = ".png" if args.motion == "static" else ".gif"
     main_formats = {"PNG"} if args.motion == "static" else {"GIF"}
@@ -2251,18 +2110,10 @@ def cmd_qc(args: argparse.Namespace) -> None:
                 int(quality["max_visible_fringe_pixels"]) <= args.max_visible_fringe_pixels,
                 f"{path.name} visible magenta fringe pixels {quality['max_visible_fringe_pixels']} <= {args.max_visible_fringe_pixels}",
             )
-            if green_screen_video_qc:
-                add_check(
-                    report,
-                    int(quality["max_visible_green_spill_pixels"]) <= args.max_visible_green_spill_pixels,
-                    f"{path.name} visible green spill pixels {quality['max_visible_green_spill_pixels']} <= {args.max_visible_green_spill_pixels}",
-                )
             add_check(report, int(quality["full_canvas_frames"]) == 0, f"{path.name} has no full-canvas opaque frames")
         if args.motion == "animated":
-            if args.require_raw_inspection and not video_mode_qc:
+            if args.require_raw_inspection:
                 check_raw_sheet_inspection(report, out_dir, path.stem, args)
-            elif args.require_raw_inspection and video_mode_qc:
-                add_check(report, True, f"{path.name} skips raw sprite-sheet inspection for video-mode source")
             info = image_info(path)
             add_check(report, int(info["frames"]) >= args.min_frames, f"{path.name} frames {info['frames']} >= {args.min_frames}")
             quality = gif_frame_quality(path)
@@ -2286,12 +2137,6 @@ def cmd_qc(args: argparse.Namespace) -> None:
                 int(quality["max_visible_fringe_pixels"]) <= args.max_visible_fringe_pixels,
                 f"{path.name} visible magenta fringe pixels {quality['max_visible_fringe_pixels']} <= {args.max_visible_fringe_pixels}",
             )
-            if green_screen_video_qc:
-                add_check(
-                    report,
-                    int(quality["max_visible_green_spill_pixels"]) <= args.max_visible_green_spill_pixels,
-                    f"{path.name} visible green spill pixels {quality['max_visible_green_spill_pixels']} <= {args.max_visible_green_spill_pixels}",
-                )
             add_check(report, int(quality["full_canvas_frames"]) == 0, f"{path.name} has no full-canvas opaque frames")
             temporal = quality.get("temporal") if isinstance(quality.get("temporal"), dict) else {}
             if not args.allow_compact_motion:

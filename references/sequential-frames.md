@@ -17,7 +17,7 @@ The current deterministic path accepts equal-cell sheets, not arbitrary director
 
 ## Prompt template
 
-> Create ONE animation timeline for [character], using the supplied reference for identity. A precise [rows] by [cols] equal-cell sheet, read left-to-right then top-to-bottom. Each cell shows the next moment of [action], not a different sticker concept. [Frame ranges and phases]. Lock [elements]. Only [moving elements] change. Fixed camera and consistent scale. Leave at least 10% safe padding within every cell for the entire motion. No visible grid lines, numbering, gutters or labels. Flat #FF00FF background with no shading; no magenta in the character. [Exact caption, or no text]. Last phase returns naturally toward the first; do not repeat the first frame at the end. Clear silhouette and expressive face at chat size.
+> Create ONE animation timeline for [character], using the supplied reference for identity. A precise [rows] by [cols] equal-cell sheet, read left-to-right then top-to-bottom. Each cell shows the next moment of [action], not a different sticker concept. [Frame ranges and phases]. Lock [elements]. Only [moving elements] change. Fixed camera and consistent scale. Leave at least 10% safe padding within every cell for the entire motion. No visible grid lines, numbering, gutters or labels. Genuine transparent PNG background with an alpha channel; no painted checkerboard or solid-color backdrop. [Exact caption, or no text]. Last phase returns naturally toward the first; do not repeat the first frame at the end. Clear silhouette and expressive face at chat size.
 
 Use the original character reference plus the approved pilot when the tool supports multiple references. When repairing, supply the sheet and identity reference, name the defective phase, and preserve the complete sequence contract. Do not chain edits solely from the previous defective frame: that can accumulate identity drift.
 
@@ -61,3 +61,11 @@ After `process-sheets`, read the compact result only. Full inspect/promote/encod
 Use one raw-sheet visual review and one decoded-GIF playback review. Reinspect individual frames only where the summary points. A decoded contact sheet verifies edges/identity but cannot verify playback; if playback was not observed, say so. Do not report imagined playback observations.
 
 Reuse the original prompt file and change only the diagnosed constraint for a retry. Keep candidate ids and immutable original sources. Do not repeatedly dump skills, full JSON, all frames, or stack traces into context. Do not skip final QC, shrink output resolution, reduce frame count, or manufacture in-betweens merely to save tokens.
+
+## Native transparency first
+
+Request native transparent PNG for the sheet, static stickers, cover and icon. Verify actual alpha instead of relying on file extension or the model name. Preserve RGB and alpha when transparency exists; the processor skips chroma keying for such inputs. Fully opaque legacy images retain the magenta keyer. A few transparent pixels do not prove the entire background is clean: visually check margins and every cell. If a requested transparent output is opaque or has a painted checkerboard, repair the transparency with image generation; do not assume a white background is transparent.
+
+PNG supports partial alpha; GIF has a palette and binary transparency. Splitting, shared scaling, GIF encoding and final edge checks are still needed. Native alpha does not fix temporal drift or loop seams. Existing color-fringe heuristics can flag intentional magenta artwork; inspect that region rather than removing the character's color or silently disabling QC.
+
+Use magenta only for a documented legacy/failed-native-alpha route when the character does not contain the key color. Do not ask for transparency and a magenta background in the same prompt. Token savings mainly come from shorter prompts and fewer keying/debugging retries; local pixel operations themselves do not consume language-model tokens.

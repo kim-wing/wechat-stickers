@@ -4,7 +4,7 @@ Use generated artwork as the creative source. References establish identity and 
 
 For each prompt specify the sending situation, hidden emotion, character-specific response, visible punchline, exact requested copy, composition, palette and silhouette. At 240px the expression must remain legible without zooming. Keep captions short and fixed over animation. Avoid unintended labels, frame numbers, grid lines, watermarks and unrelated decoration.
 
-For animation use [sequential-frames.md](sequential-frames.md). Default to one temporally ordered sheet per sticker, with identity and layout locked. Use [video-workflow.md](video-workflow.md) only when video is selected. Do not inherit transport, grid dimensions or failed candidates from unrelated old projects.
+For animation use [sequential-frames.md](sequential-frames.md). Default to one temporally ordered sheet per sticker, with identity and layout locked. Do not inherit transport, grid dimensions or failed candidates from unrelated old projects.
 
 For transparent stickers use true alpha if reliably provided; otherwise request a flat key color absent from the character (the existing sheet keyer expects #FF00FF). No shadows, gradients or glow on the key background. Keep safe margins around every pose. A character containing magenta needs a compatible transparency route rather than destructive magenta removal.
 
@@ -37,7 +37,7 @@ Cover:
 
 - Use the most recognizable front-facing version of the character.
 - Generate a single cover/icon source artwork by default and use it for both `cover.png` and `icon.png`.
-- Transparent `#FF00FF` extraction background.
+- Native transparent PNG background; preserve the alpha channel.
 - The raw source must not have a black, dark, white, or colored full-canvas background. If the generated source is not on pure `#FF00FF` or already transparent, regenerate before making cover/icon.
 - No text.
 
@@ -45,7 +45,7 @@ Icon:
 
 - Use a simplified head or clear face mark cropped/fitted from the same cover/icon source artwork by default.
 - Do not generate a separate icon character unless there is a deliberate reason and the manifest records `cover_icon_identity_match_approved: true` with a reason.
-- Transparent `#FF00FF` extraction background.
+- Native transparent PNG background; preserve the alpha channel.
 - The exported icon must have real transparent pixels around the head/mark. Do not accept an opaque PNG with black/dark background.
 - No white outline if the platform icon should remain crisp.
 - No text.

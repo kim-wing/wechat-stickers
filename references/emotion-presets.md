@@ -54,7 +54,7 @@ Choose motion from the social beat, not from the emotion label.
 
 - Use a delayed second beat when the humor comes from revealing the hidden emotion.
 - Use `micro_expression`, `head_only`, or `single_limb` when restraint is the joke.
-- Use `controlled_full_body` when collapse, escape, overreaction, or status reversal is the joke and video mode can preserve identity.
+- Use `controlled_full_body` when collapse, escape, overreaction, or status reversal is the joke and the generated sequence can preserve identity.
 - Keep text and props locked unless their movement is the single intended punchline.
 - Make the most recognizable `punchline_frame` survive as a still image.
 

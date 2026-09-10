@@ -48,56 +48,6 @@ Include cover, icon, banner, reward guide, reward thanks, metadata, preview, and
 包含封面、icon、banner、赞赏引导图、赞赏致谢图、metadata、预览图和 QC。
 ```
 
-## Animated Mature Case / 动态成熟案例
-
-Project: `xiaojingling-gemin-game-8-animated-20260521`
-
-项目：`xiaojingling-gemin-game-8-animated-20260521`
-
-Pack preview / 整包预览：
-
-![Xiaojingling Gemin game animated stickers](previews/xiaojingling-gemin-game-animated-preview.jpg)
-
-Single GIF sample / 单张动态 GIF 示例：
-
-![Xiaojingling Gemin game animated sample](previews/xiaojingling-gemin-game-animated-01.gif)
-
-English summary:
-
-- Type: animated 16-pack.
-- Character: fluffy white puppy mascot Xiao Jingling Gemin.
-- Theme: gaming / squad chat reactions.
-- Workflow: generated first/last frame inputs, Seedance video task per sticker, MP4 download, green-screen keying, transparent GIF export, thumbnails, metadata, preview, and QC.
-- Why it is a good reference: it records the actual video source chain instead of faking animation from a local still cutout.
-- Key manifest fields: `creative_source: seedance_video`, `animated_source_mode: green_screen_video`, `video_input_mode: first_last_frame`, `video_source_path`, `video_task_report_path`, `frame_sample_count`.
-
-中文总结：
-
-- 类型：动态 16 张表情包。
-- 角色：奶油白毛绒小狗“小精灵 Gemin”。
-- 主题：开黑/游戏嘴替。
-- 流程：生成首尾帧，逐张提交 Seedance 视频任务，下载 MP4，绿幕抠像，导出透明 GIF，生成缩略图、metadata、预览图和 QC。
-- 参考价值：它记录了真实视频生产链路，而不是从一张本地抠图做假动效。
-- 核心 manifest 字段：`creative_source: seedance_video`、`animated_source_mode: green_screen_video`、`video_input_mode: first_last_frame`、`video_source_path`、`video_task_report_path`、`frame_sample_count`。
-
-Prompt shape / 提示词结构：
-
-```text
-Use $wechat-stickers to create an animated 16-pack WeChat sticker album.
-Character: fluffy white puppy named Xiao Jingling Gemin.
-Theme: gaming reactions and squad chat.
-Mode: transparent GIF, Seedance first-last-frame video route.
-Make one pilot first. Do not fall back to sprite sheet or local still loop without approval.
-```
-
-```text
-使用 $wechat-stickers 生成一套 16 张动态微信表情包。
-角色：奶油白毛绒小狗小精灵 Gemin。
-主题：开黑/游戏嘴替。
-模式：透明 GIF，走 Seedance 首尾帧视频路线。
-先做 1 个 pilot。没有明确批准，不要退回 sprite sheet 或本地静态循环。
-```
-
 ## Additional Historical Examples / 其他历史案例
 
 ### Static Case: Gemin Workplace 24-Pack / 静态：Gemin 职场嘴替 24 张

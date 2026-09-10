@@ -17,46 +17,8 @@ Use these specs when preparing WeChat sticker assets. The platform may change va
 - Dynamic GIFs must loop forever.
 - Default image-frame route: plan an ordered 12/16-frame equal-cell sheet, then verify actual motion and loop quality. See [sequential-frames.md](sequential-frames.md).
 - Frame count and timing are animation-design choices, not platform specifications. Existing scripts use a conservative 12-frame minimum; a compact profile must be applied consistently and documented.
-- Video-derived frame counts depend on action and byte budget. All routes require clean edges and readable playback.
+- Generated frames require clean edges and readable playback.
 - Keep style unified and scenarios distinct.
-
-## Video-Based Animated Stickers
-
-- Video-based animated stickers may be produced as either transparent GIFs or background GIFs.
-- Video is optional. Select it explicitly in the current plan; new animated jobs default to image-generated sequential frames.
-- Preserve the source mode of an existing project and keep source provenance. Old failed drafts do not establish a new run's quality or settings.
-- Use Doubao Seedance 1.5 Pro as the default and only video model for this workflow unless the project policy changes.
-- Use first-last-frame image-to-video as the default Seedance input mode. Provide a `first_frame` image and a `last_frame` image to constrain the action boundary. Use first-frame-only generation only when an end frame is unavailable, meaningless for the motion, or explicitly chosen.
-- First and last frame images must share the same aspect ratio, canvas size, character identity, camera/framing, subject scale, style, and background/key color. Mismatched dimensions or ratios can cause automatic crop/adaptation and should fail production review.
-- Before Seedance generation, compare the start/end pair visually. Matching dimensions are not enough: identity, proportions, face/screen details, material, colors, outline thickness, camera, subject scale, baseline, and background/key color should also match.
-- Using the exact same file for `first_frame` and `last_frame` is allowed only as an explicit loop-closure choice and must be recorded with `end_frame_same_as_start_approved` plus a reason. Otherwise it is treated as a degraded first-frame-only workflow.
-- Seedance sticker videos must be generated without audio: `generate_audio: false`.
-- Set `watermark: false` for production sticker videos.
-- Keep Ark API keys out of all project files. Use runtime environment variables such as `ARK_API_KEY`.
-- A key pasted into chat does not automatically become `$ARK_API_KEY` for tool execution. For security, do not paste secrets into command lines; make the key available through the Codex runtime environment or an approved local secret source, then verify only that it is present.
-- The Seedance task API is asynchronous: create task, store task id, poll the query endpoint, download `video_url`, then process frames locally.
-- Use `duration` for Seedance 1.5 Pro tasks; do not depend on `frames` for Seedance 1.5 Pro.
-- For video mode, sample GIF frames locally after download: 24-32 frames for subtle motion, 36-48 frames for dance/run/spin/complex motion. If file size fails, step down 48 -> 40 -> 36 -> 32 -> 28 -> 24 before accepting compact quality.
-- Video-mode production stickers must keep video provenance in `manifest.json`: each main sticker should use `creative_source: "seedance_video"`, `video_input_mode`, `postprocess_input_path` equal to the downloaded MP4, plus `start_frame_source_path`, `end_frame_source_path` for first-last-frame mode, `video_source_path`, `video_task_report_path`, `video_prompt_path`, `keyed_frames_dir`, and `transparent_gif_source`.
-- Expanded albums must keep count-sensitive delivery metadata consistent: final directory/archive name, manifest `count`, design note, `metadata.csv`, preview grid, QC report, and expected count should all describe the final count. If an old output folder is reused as the source, record the expansion source and final archive path in the manifest.
-- Do not use `image_gen_loop`, a local still-image transform, or a static cutout animation as a silent fallback after Seedance succeeds or fails. If no video candidate passes, regenerate video candidates or mark the run as a production failure.
-- Transparent video mode should use a pure green screen source (`#00FF00`) and a keying pass before GIF export.
-- Green-screen postprocessing must include despill and final visible-green-spill QC. Production transparent GIFs should have no visible green halo, green background chips, or green edge remnants beyond a tiny quantization tolerance of 1 visible green-spill pixel.
-- Keep keyed PNG frames as an auditable intermediate. Final transparent GIFs should be encoded from the keyed RGBA frame sequence, not directly from MP4.
-- The final keyed frame folder should contain exactly the selected frame sequence used for the GIF, or use an unambiguous `selected_###.png` naming convention. Do not mix rough keyed frames, extracted RGB frames, and final ping-pong/filtered frames in one audit count.
-- `frame_sample_count`, final keyed output frame count, and final GIF frame count should match after every reprocess.
-- Apply the same fixed canvas transform to every extracted video frame. Per-frame alpha/bbox crop, recenter, or rescale is not production-safe because it can create center-step and scale-step jitter.
-- For video-derived animated stickers, intended large motion is allowed. Do not reject or downsample solely because `visual diff outlier ratio` is high; reject only when the high metric corresponds to visible artifacts such as identity drift, scale breathing, camera movement, frame wrap, text/prop morphing, green spill, or bad loop closure.
-- Custom temporal QC profiles for expressive video motion must be named and recorded in the manifest with exact threshold overrides. Edge/keying/artifact checks remain strict and should be fixed by re-keying or regenerating, not by relaxing production QC.
-- Candidate video outputs should stay in candidate or preview paths until they pass QC. Production `main/NN.gif`, `thumbs/NN.png`, final `keyed_frames/NN`, and manifest selection fields should describe only the selected passing candidate, or be explicitly marked preview-only.
-- Seedance task reports should include normalized top-level status/model/audio/watermark/duration/ratio/resolution/task-id fields plus the raw API responses. Do not rely on ad hoc report patching after generation.
-- Use shared, version-checked skill scripts for Seedance and video postprocessing. New helper code should be Python 3.9 compatible and compiled before any paid or long-running API call.
-- CorridorKey may be used as an optional external keying tool for green/blue-screen unmixing when available. It requires original RGB frames plus a coarse alpha hint and can recover straight foreground color plus linear alpha for soft edges.
-- If CorridorKey is used, force green-screen mode for our green plates and keep the alpha hint, keyed frames, and keying settings with the job output.
-- Do not bundle or redistribute CorridorKey code, weights, or paid inference access as part of this skill without license review.
-- Background GIF mode may keep a designed background, but it should be labeled as non-transparent and should keep the background stable across frames.
-- Background GIF backgrounds must be related to the sticker theme, character world, emotion, or chat scenario. Do not use generic gradients, random scenery, or unrelated decorative backgrounds.
-- For background GIF albums, use a shared background system so the pack feels cohesive: consistent palette, recurring motifs, scene vocabulary, depth, and contrast level.
 
 ## Emoji / Reward Eligibility
 
